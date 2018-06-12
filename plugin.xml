@@ -1,0 +1,52 @@
+<?xml version='1.0' encoding='utf-8'?>
+<plugin id="com.chinamobile.ftp.ftpspeed" version="2.3.4" xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android">
+    <name>ftpspeed</name>
+    <js-module name="ftpspeed" src="www/ftpspeed.js">
+        <clobbers target="cordova.plugins.ftpspeed" />
+    </js-module>
+
+	 <platform name="android">
+        <!-- ftp测速插件 -->
+        <config-file target="res/xml/config.xml" parent="/*">
+            <feature name="FTPSpeed">
+                <param name="android-package" value="com.chinamobile.ftp.FTPSpeed"/>
+            </feature>
+        </config-file>
+
+		 <!-- 权限 -->
+        <config-file target="AndroidManifest.xml" parent="/*">
+            <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+            <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+			<uses-permission android:name="android.permission.INTERNET"/>
+        </config-file>
+     
+        <!-- 项目文件 -->
+        <source-file src="src/android/FTPSpeed.java"  target-dir="src/com/chinamobile/ftp"/>
+		<source-file src="src/android/FTPSpeedUtil.java"  target-dir="src/com/chinamobile/ftp"/>
+
+		<!-- 项目jar包 -->
+        <source-file src="src/android/commons-net-1.4.1.jar" target-dir="libs"/>
+        <source-file src="src/android/jakarta-oro.jar" target-dir="libs"/>
+
+    </platform>
+    
+    <platform name="ios">
+        <!-- ftp测速插件 -->
+        <config-file target="config.xml" parent="/*">
+            <feature name="FTPSpeed">
+                <param name="ios-package" value="FTPSpeed" />
+            </feature>
+        </config-file>
+        <!--  项目文件 -->
+        <header-file src="src/ios/FTPSpeed.h" />
+        <source-file src="src/ios/FTPSpeed.m" />
+        <header-file src="src/ios/JUNFTPPutRequest.h" />
+        <source-file src="src/ios/JUNFTPPutRequest.m" />
+        <header-file src="src/ios/JUNFTPDeleteRequest.h" />
+        <source-file src="src/ios/JUNFTPDeleteRequest.m" />
+        <header-file src="src/ios/JUNFTPGetRequest.h" />
+        <source-file src="src/ios/JUNFTPGetRequest.m" />
+        
+    </platform>
+
+</plugin>

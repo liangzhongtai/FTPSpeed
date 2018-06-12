@@ -1,0 +1,26 @@
+{
+  "name": "com.chinamobile.ftp.ftpspeed",
+  "version": "2.3.4",
+  "description": "this is plugin about ftp speed test.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "cordova": {
+    "id": "com.chinamobile.ftp.FTPSpeed",
+    "platforms": [
+      "android",
+      "ios"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/liangzhongtai/FTPSpeed.git"
+  },
+  "keywords": [
+    "cordova",
+    "ftp"
+  ]
+}
