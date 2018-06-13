@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
-<plugin id="com.chinamobile.ftp.ftpspeed" version="2.5.0" xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android">
+<plugin id="com.chinamobile.ftp.ftpspeed" version="2.7.0" xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android">
     <name>ftpspeed</name>
-    <js-module name="ftpspeed" src="www/ftpspeed.js">
+    <js-module name="FTPSpeed" src="www/ftpspeed.js">
         <clobbers target="cordova.plugins.ftpspeed" />
     </js-module>
 

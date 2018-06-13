@@ -1,6 +1,6 @@
 {
   "name": "com.chinamobile.ftp.ftpspeed",
-  "version": "2.5.0",
+  "version": "2.7.0",
   "description": "this is plugin about ftp speed test.",
   "main": "index.js",
   "scripts": {
@@ -9,7 +9,7 @@
   "author": "",
   "license": "ISC",
   "cordova": {
-    "id": "com.chinamobile.ftp.FTPSpeed",
+    "id": "com.chinamobile.ftp.ftpspeed",
     "platforms": [
       "android",
       "ios"
