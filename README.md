@@ -1,5 +1,5 @@
 ##FTPSpeed插件使用说明
-* 版本:2.3.4
+* 版本:2.5.0
 
 ##环境配置
 * npm 4.4.1 +
@@ -8,9 +8,11 @@
 
 ##使用流程 
 
-#####注意:安卓平台，插件加入第三方jar包后：
+#####注意:安卓平台，插件加入第三方jar包后，如果cordova build 命令后，报以下异常:
+#####‘*\项目名\platforms\android\Androidmanifest.xml’
+#####‘*\项目名\platfroms\android\res\xml\config.xml’
+#####请通过以下方法解决问题
 #####方法一:项目根目录\platforms\android\cordova\Api.js文件作以下修改，否则执行cordova build命令会报异常：UnhandledPromiseRejectionWarning: Error: ENOENT: no such file or directory,......；
-
 
 ```javascript
 this.locations = {
@@ -35,7 +37,7 @@ this.locations = {
 
 ######1.进入项目的根目录，添加热更新插件:com.chinamobile.ftp.ftpspeed
 * 为项目添加Camera插件，执行:`cordova plugin add com.chinamobile.ftp.ftpspeed`
-* 如果要删除插件,执行:`cordova plugin add com.chinamobile.ftp.FTPSpeed`
+* 如果要删除插件,执行:`cordova plugin add com.chinamobile.ftp.ftpspeed`
 * 为项目添加对应的platform平台,已添加过，此步忽略，执行:
 * 安卓平台: `cordova platform add android`
 * ios平台: `cordova platform add ios`

@@ -1,6 +1,6 @@
 {
   "name": "com.chinamobile.ftp.ftpspeed",
-  "version": "2.3.4",
+  "version": "2.5.0",
   "description": "this is plugin about ftp speed test.",
   "main": "index.js",
   "scripts": {
