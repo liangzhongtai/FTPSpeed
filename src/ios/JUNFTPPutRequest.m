@@ -66,16 +66,17 @@ void myPutSocketWriteCallBack (CFWriteStreamRef stream, CFStreamEventType event,
         
     }
     NSString *path = [UPLOADPATH stringByAppendingPathComponent:resoureceStr];
-    
     self.bytesTotal = [[[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil] fileSize];
-    
     NSURL *url = [NSURL fileURLWithPath:path];
+    
+    NSLog(@"上传存储地址:url=%@",url);
+    NSLog(@"上传地址:resourceUrl=%@",directoryUrl.absoluteURL);
+    NSLog(@"上传地址:path=%@",path);
     
     if (self.fileStream == nil) {
         self.fileStream = CFReadStreamCreateWithFile(kCFAllocatorDefault, (__bridge CFURLRef)(url));
-
         if (!CFReadStreamOpen(self.fileStream)) {
-            NSLog(@"CFReadStreamOpen error");
+            NSLog(@"FTP上传测试文件读取异常");
             [plugin faileWithMessage:@[[NSNumber numberWithInteger:UPLOAD],[NSNumber numberWithInteger:TESTING_ERROR],@"FTP上传测试文件读取异常"]];
             return;
         }
@@ -88,12 +89,16 @@ void myPutSocketWriteCallBack (CFWriteStreamRef stream, CFStreamEventType event,
     self.preLength = 0;
     self.speedMax = 0;
     self.speedAver = 0;
+    self.totalTime = 0;
+    self.totalSize = 0;
     
     self.ftpPath = ftpPath;
     
     self.myWriteStream = CFWriteStreamCreateWithFTPURL(NULL, (__bridge CFURLRef)directoryUrl);
-    //if(CFReadStreamSetProperty(self.fileStream ,  kCFStreamPropertyFTPUserName,  (__bridge CFTypeRef)username)&&
-       //CFReadStreamSetProperty(self.fileStream ,  kCFStreamPropertyFTPPassword,  (__bridge CFTypeRef)password)){
+    CFWriteStreamSetProperty(self.myWriteStream, kCFStreamPropertyFTPFetchResourceInfo, kCFBooleanTrue);
+    
+    if(CFWriteStreamSetProperty(self.myWriteStream ,  kCFStreamPropertyFTPUserName,  (__bridge CFTypeRef)username)&&
+       CFWriteStreamSetProperty(self.myWriteStream ,  kCFStreamPropertyFTPPassword,  (__bridge CFTypeRef)password)){
         CFStreamClientContext clientContext;
         clientContext.version = 0;
         clientContext.info = CFBridgingRetain(self) ;
@@ -123,19 +128,23 @@ void myPutSocketWriteCallBack (CFWriteStreamRef stream, CFStreamEventType event,
             [plugin faileWithMessage:@[[NSNumber numberWithInteger:UPLOAD],[NSNumber numberWithInteger:TESTING_ERROR],@"FTP上传测速流获取失败"]];
             return;
         }
-    //}else{
-        //[plugin faileWithMessage:@"FTP用户名或密码错误"];
-    //}
+    }else{
+        [plugin faileWithMessage:@[@"FTP用户名或密码错误"]];
+    }
 }
 
 -(void)stop{
-    CFWriteStreamUnscheduleFromRunLoop(self.myWriteStream, CFRunLoopGetCurrent(), kCFRunLoopCommonModes);
-    CFWriteStreamClose(self.myWriteStream);
-    CFRelease(self.myWriteStream);
+    if(self.myWriteStream != nil){
+        CFWriteStreamUnscheduleFromRunLoop(self.myWriteStream, CFRunLoopGetCurrent(), kCFRunLoopCommonModes);
+        CFWriteStreamClose(self.myWriteStream);
+        CFRelease(self.myWriteStream);
+    }
     self.myWriteStream = nil;
-    
-    CFReadStreamClose(self.fileStream);
-    CFRelease(self.fileStream);
+
+    if(self.fileStream != nil){
+        CFReadStreamClose(self.fileStream);
+        CFRelease(self.fileStream);
+    }
     self.fileStream = nil;
     
     //上传结束，删除ftp服务器上的文件
@@ -165,7 +174,8 @@ void myPutSocketWriteCallBack (CFWriteStreamRef stream, CFStreamEventType event,
 #define BUFSIZE 32768
 void myPutSocketWriteCallBack (CFWriteStreamRef stream, CFStreamEventType event, void *myPtr){
     JUNFTPPutRequest* request = (__bridge JUNFTPPutRequest *)myPtr;
-    
+    long start = [[NSDate date] timeIntervalSince1970]*1000;
+    long totalSize = 0;
     switch(event){
         case NSStreamEventHasSpaceAvailable:{
             UInt8 recvBuffer[BUFSIZE];
@@ -187,7 +197,7 @@ void myPutSocketWriteCallBack (CFWriteStreamRef stream, CFStreamEventType event,
                             long speed = (request.nowLength-request.preLength)*8/(nowTime-request.preTime);
                             request.speedMax = request.speedMax>speed?request.speedMax:speed;
                             request.speedAver = request.nowLength*8/(nowTime-request.start);
-                            request.progressBlock((float)request.bytesUploaded/(float)request.bytesTotal,speed,request.speedMax,request.speedAver);
+                            request.progressBlock((float)request.bytesUploaded/(float)request.bytesTotal,speed,request.speedMax,request.speedAver,nowTime-start,request.nowLength);
                             
                             //NSLog(@"speed=%ld",speed);
                             //NSLog(@"speedMax=%ld",request.speedMax);
@@ -204,7 +214,8 @@ void myPutSocketWriteCallBack (CFWriteStreamRef stream, CFStreamEventType event,
                     }
                 }while ((bytesRead-bytesOffset)>0);
             }else if(bytesRead == 0){
-                request.finishedBlock();
+                totalSize = request.nowLength;
+                request.finishedBlock([[NSDate date] timeIntervalSince1970]*1000-start,totalSize);
                 [request stop];
             }else{
                 request.failBlock();
@@ -220,7 +231,7 @@ void myPutSocketWriteCallBack (CFWriteStreamRef stream, CFStreamEventType event,
             break;
         case kCFStreamEventEndEncountered:
             //NSLog(@"upload finished\n");
-            request.finishedBlock();
+            request.finishedBlock([[NSDate date] timeIntervalSince1970]*1000-start,totalSize);
             [request stop];
             break;
         default:

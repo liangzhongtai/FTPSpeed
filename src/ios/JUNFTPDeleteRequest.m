@@ -45,6 +45,7 @@
 -(void)start{
     SInt32 status = 0;
 	NSURL* url = [NSURL URLWithString:directoryStr];
+    
 	BOOL success = CFURLDestroyResource((__bridge CFURLRef)url, &status);
 	if(success) {
 		self.finishedBlock();

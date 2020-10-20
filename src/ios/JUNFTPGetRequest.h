@@ -9,9 +9,9 @@
 #import <Foundation/Foundation.h>
 #import "FTPSpeed.h"
 
-typedef void (^FTPGetFinishedBlock)(void);
-typedef void (^FTPGetFailBlock)(void);
-typedef void (^FTPGetProgressBlock)(float progress,long speed,long speedMax,long speedAver);
+typedef void (^FTPGetFinishedBlock)(long totalTime,long totalSize);
+typedef void (^FTPGetFailBlock)(NSString *msg);
+typedef void (^FTPGetProgressBlock)(float progress,long speed,long speedMax,long speedAver,long totalTime,long totalSize);
 
 @interface JUNFTPGetRequest : NSObject
 
@@ -31,6 +31,8 @@ typedef void (^FTPGetProgressBlock)(float progress,long speed,long speedMax,long
 @property (nonatomic,assign) long preLength;// = 0;
 @property (nonatomic,assign) long speedMax;// = 0;
 @property (nonatomic,assign) long speedAver;// = 0;
+@property (nonatomic,assign) long totalTime;// = 0;
+@property (nonatomic,assign) long totalSize;// = 0;
 
 +(JUNFTPGetRequest*)requestWithResource:(NSURL*)url
                             toDirectory:(NSString*)directory;

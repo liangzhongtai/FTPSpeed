@@ -10,6 +10,7 @@
 #import <Cordova/CDV.h>
 #import "sys/dirent.h"
 
+
 //ftpType
 static NSInteger const DOWNLOAD        = 0;
 static NSInteger const UPLOAD          = 1;

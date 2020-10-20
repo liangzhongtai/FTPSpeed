@@ -11,6 +11,7 @@ import android.util.Log;
 import org.apache.commons.net.ftp.FTPClient;
 import org.apache.commons.net.ftp.FTPFile;
 import org.apache.commons.net.ftp.FTPReply;
+import org.apache.cordova.CallbackContext;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -22,12 +23,15 @@ import java.io.RandomAccessFile;
  * Created by liangzhongtai on 2018/5/25.
  */
 
-public class FTPSpeedUtil {
+public class  FTPSpeedUtil {
+    // 公网服务器
+    // 多线程下载，上传
+    // 1G文件
     private volatile static FTPSpeedUtil uniqueInstance;
     private FTPClient ftpClient;
     public FTPSpeed.FTPSpeedListener listener;
     public int ftpType;
-    public int interval = 500;
+    public int interval = 100;
     //public String sdFileName;
     public boolean uploadStart;
     public boolean downloadStart;
@@ -36,9 +40,13 @@ public class FTPSpeedUtil {
     public int ftpPort;
     public String ftpUN;
     public String ftpPW;
+    public String uploadFtpPath;
+    public String downloadFtpPath;
     public String ftpFileName;
     public String sdFileName;
     public String ftpOriFileName;
+    public int threadCount;
+    public CallbackContext callbackContext;
 
     private FTPSpeedUtil() {
         getFTPSpeed();
@@ -61,12 +69,15 @@ public class FTPSpeedUtil {
     }
 
 
-    protected void upload() {
-        if(!checkFTPSpeedFile()){
-            listener.sendFTPSpeedError(FTPSpeed.UPLOAD,FTPSpeed.DOWNLOAD_FIRST,"请先下载FTP测试文件");
+    protected void upload(CallbackContext callbackContext) {
+        this.callbackContext = callbackContext;
+        if (!checkFTPSpeedFile()) {
+            listener.sendFTPSpeedError(FTPSpeed.UPLOAD, FTPSpeed.DOWNLOAD_FIRST,
+                    "请先下载FTP测试文件", callbackContext);
             return;
-        }else if(uploadStart){
-            listener.sendFTPSpeedError(FTPSpeed.UPLOAD,FTPSpeed.TESTING,"正在进行FTP上传测试");
+        } else if (uploadStart) {
+            listener.sendFTPSpeedError(FTPSpeed.UPLOAD, FTPSpeed.TESTING,
+                    "正在进行FTP上传测试", callbackContext);
             return;
         }
         ftpType = FTPSpeed.UPLOAD;
@@ -75,7 +86,7 @@ public class FTPSpeedUtil {
             @Override
             public void run() {
                 if (connect()) {
-                    uploadFile();
+                    uploadFile(callbackContext);
                 }else{
                     uploadStart = false;
                 }
@@ -83,11 +94,12 @@ public class FTPSpeedUtil {
         }).start();
     }
 
-
-    protected void download() {
+    protected void download(CallbackContext callbackContext) {
+        this.callbackContext = callbackContext;
         ftpType = FTPSpeed.DOWNLOAD;
         if(downloadStart){
-            listener.sendFTPSpeedError(FTPSpeed.UPLOAD,FTPSpeed.TESTING,"正在进行下载FTP测试");
+            listener.sendFTPSpeedError(FTPSpeed.UPLOAD, FTPSpeed.TESTING,
+                    "正在进行下载FTP测试", callbackContext);
             return;
         }
         downloadStart = true;
@@ -96,7 +108,7 @@ public class FTPSpeedUtil {
             public void run() {
                 //test.mainTest(null);
                 if (connect()) {
-                    downloadFile();
+                    downloadFile(callbackContext);
                 }else{
                     downloadStart = false;
                 }
@@ -106,7 +118,9 @@ public class FTPSpeedUtil {
 
 
     private boolean checkFTPSpeedFile() {
-        if(TextUtils.isEmpty(sdFileName))return false;
+        if (TextUtils.isEmpty(sdFileName)) {
+            return false;
+        }
         String fileName = sdFileName;
         String localPath = Environment.getExternalStorageDirectory() + "/"+ fileName;
         File localFile = new File(localPath);
@@ -118,126 +132,165 @@ public class FTPSpeedUtil {
     public synchronized boolean connect(){
         boolean bool = false;
         try {
-            if (ftpClient.isConnected()) {
-                ftpClient.disconnect();
+            try {
+                if (ftpClient != null && ftpClient.isConnected()) {
+                    Log.d(FTPSpeed.TAG, "ftpClient已经处于链接，先断开链接");
+                    ftpClient.logout();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                Log.d(FTPSpeed.TAG, "登录前，登出ftpe=" + e.toString());
             }
+            ftpClient = new FTPClient();
             ftpClient.setDataTimeout(60000);
             ftpClient.connect(ftpIp, ftpPort);
+            ftpClient.login(ftpUN, ftpPW);
             int reply = ftpClient.getReplyCode();
-            if (FTPReply.isPositiveCompletion(reply)) {
-                if (ftpClient.login(ftpUN, ftpPW)) {
-                    bool = true;
-                }else{
-                    sendMessage(ftpType,FTPSpeed.LOGIN_FAILE);
+            if (!FTPReply.isPositiveCompletion(reply)) {
+                sendMessage(ftpType, FTPSpeed.LOGIN_FAILE);
+                try {
+                    ftpClient.disconnect();
+                }  catch (Exception e) {
+                    Log.d(FTPSpeed.TAG, "登录失败，e=" + e.toString());
+                    e.printStackTrace();
                 }
-            }else{
-                ftpClient.disconnect();
-                //if(listener!=null)
-                //listener.sendFTPSpeedError(ftpType,FTPSpeed.LOGIN_FAILE,"FTP服务器登录异常_reply="+reply);
-                sendMessage(ftpType,FTPSpeed.LOGIN_FAILE);
+            } else {
+                bool = true;
             }
+
         } catch (Exception e) {
             e.printStackTrace();
-            //if(listener!=null)
-            //listener.sendFTPSpeedError(ftpType,FTPSpeed.CONNECT_FAILE,"FTP服务器连接异常_error="+e.toString());
-            sendMessage(ftpType,FTPSpeed.CONNECT_FAILE);
+            Log.d(FTPSpeed.TAG, "连接失败，e=" + e.toString());
+            sendMessage(ftpType, FTPSpeed.CONNECT_FAILE);
         }
         return bool;
     }
 
 
     //上传测试
-    public synchronized void uploadFile() {
+    public synchronized void uploadFile(CallbackContext callbackContext) {
         RandomAccessFile raf = null;
         OutputStream output = null;
         boolean error = false;
+        long start = System.currentTimeMillis();
+        long nowLength = 0;
         try {
             String localFilePath = Environment.getExternalStorageDirectory() + "/"+sdFileName;
             File file = new File(localFilePath);
             if (!file.exists()) {
                 sendMessage(ftpType,FTPSpeed.FTP_NO_FILE);
-                //if(listener!=null)
-                //listener.sendFTPSpeedError(ftpType,FTPSpeed.FTP_NO_FILE,"FTP服务器上没有目标测试文件");
                 uploadStart = false;
                 error = true;
                 return;
             }
             String fileName = file.getName();
+            // fileName = new String(fileName.getBytes("UTF-8"), "ISO-8859-1");
             long serverSize = 0;
             raf = new RandomAccessFile(file, "rw");
+            // TODO
             ftpClient.enterLocalPassiveMode();
             //设置文件格式为二进制
             ftpClient.setControlEncoding("UTF-8");
             ftpClient.setFileType(FTPClient.BINARY_FILE_TYPE);
             ftpClient.setRestartOffset(serverSize);
-            //ftpClient.changeWorkingDirectory("/");
+            if (TextUtils.isEmpty(uploadFtpPath)) {
+                ftpClient.changeWorkingDirectory("/");
+            } else {
+                ftpClient.changeWorkingDirectory(uploadFtpPath);
+            }
+            Log.d(FTPSpeed.TAG, "上传文件_fileName=" + fileName);
+            Log.d(FTPSpeed.TAG, "上传文件大小_sice=" + file.length());
+            ftpClient.changeWorkingDirectory("/");
             raf.seek(serverSize);
-            long start = System.currentTimeMillis();
+
             output = ftpClient.appendFileStream(fileName);
             byte[] b = new byte[1024];
             int length = 0;
             float localsize = file.length();
-            localsize = localsize<=0?1000000000:localsize;
+            localsize = localsize <= 0 ? 1000000000 : localsize;
             long preTime = start;
-            long nowLength = length;
             long preLength = length;
             long speedMax = 0;
             while ((length = raf.read(b)) != -1) {
-                if(ftpType==FTPSpeed.CLOSE)break;
+                Log.d(FTPSpeed.TAG, "上传文件写入_length=" + length);
+                if (ftpType == FTPSpeed.CLOSE) {
+                    break;
+                }
                 nowLength += length;
                 long nowTime = System.currentTimeMillis();
-                if(nowTime-preTime>=interval){
-                    long speed = (nowLength-preLength)*8/(nowTime-preTime);
-                    speedMax = speedMax>speed?speedMax:speed;
-                    sendMessage(ftpType,FTPSpeed.TESTING,speed,speedMax,nowLength*8/(nowTime-start),nowLength/localsize);
+                if (nowTime-preTime >= interval) {
+                    long speed = (nowLength - preLength) * 8 / (nowTime - preTime);
+                    speedMax = speedMax > speed ? speedMax:speed;
+                    sendMessage(ftpType, FTPSpeed.TESTING, speed, speedMax,
+                            nowLength * 8/ (nowTime - start),
+                            nowLength / localsize,
+                            nowTime - start, nowLength);
                     preTime = nowTime;
                     preLength = nowLength;
                 }
                 output.write(b, 0, length);
             }
-        }catch (Exception e) {
+        } catch (Exception e) {
             e.printStackTrace();
-            sendMessage(FTPSpeed.CLOSE,FTPSpeed.TESTING_ERROR,0,0,0,0);
+            sendMessage(ftpType, FTPSpeed.CLOSE,0,0,0,
+                    0,0,0);
             error = true;
         } finally {
             uploadStart = false;
-            if(!error){
-                sendMessage(ftpType,FTPSpeed.FINISH,0,0,0,1);
+            if (!error) {
+                sendMessage(ftpType, FTPSpeed.FINISH,0,0,0,1,
+                        System.currentTimeMillis()-start,nowLength);
             }
             try {
-                if(output!=null){
+                if (output != null) {
                     output.flush();
                     output.close();
                 }
-                if(raf!=null)raf.close();
-                if(sdFileName!=null&&!sdFileName.equals(ftpOriFileName))
-                ftpClient.deleteFile(sdFileName);
-                ftpClient.logout();
-            }catch (Exception e){
-                sendMessage(ftpType,FTPSpeed.TESTING_ERROR,0,0,0,0);
+                if (raf != null) {
+                    raf.close();
+                }
+                if (sdFileName != null && !sdFileName.equals(ftpOriFileName)) {
+                    ftpClient.deleteFile(sdFileName);
+                }
+                if (ftpClient.isConnected()) {
+                    Log.d(FTPSpeed.TAG, "上传结束，关闭链接");
+                    ftpClient.logout();
+                }
+            } catch (Exception e){
+                Log.d(FTPSpeed.TAG, "上传结束e=" + e.toString());
+                // sendMessage(ftpType, FTPSpeed.TESTING_ERROR, 0, 0, 0, 0, 0, 0);
             }
         }
     }
 
-    protected void downloadFile() {
+    protected void downloadFile(CallbackContext callbackContext) {
         OutputStream out = null;
         InputStream input = null;
         boolean error = false;
+        long start = System.currentTimeMillis();
+        long nowLength = 0;
         try {
             String fileName = sdFileName;
             String localPath = Environment.getExternalStorageDirectory() + "/"+ fileName;
             String ftpPath = ftpFileName;
+            ftpFileName = new String(ftpFileName.getBytes("UTF-8"), "ISO-8859-1");
             float localSize = 0;
             File localFile = new File(localPath);
-            if(localFile.exists()){
+            if (localFile.exists()) {
                 localFile.delete();
             }
             localFile.createNewFile();
-            long start = System.currentTimeMillis();
+            // TODO
             ftpClient.enterLocalPassiveMode();
             //设置文件格式为二进制
             ftpClient.setControlEncoding("UTF-8");
             ftpClient.setFileType(FTPClient.BINARY_FILE_TYPE);
+            if (TextUtils.isEmpty(downloadFtpPath)) {
+                ftpClient.changeWorkingDirectory("/");
+            } else {
+                ftpClient.changeWorkingDirectory(downloadFtpPath);
+            }
+            Log.d(FTPSpeed.TAG, "下载路径_downloadFtpPath=" + downloadFtpPath);
             //ftpClient.changeWorkingDirectory("/");
 
             //检测FTP服务器上的FTP测试文件是否存在
@@ -252,6 +305,8 @@ public class FTPSpeedUtil {
 
             if(input == null) {
                 error = true;
+                sendMessage(ftpType, FTPSpeed.FTP_NO_FILE, 0, 0, 0,
+                        0, 0, 0);
                 return;
             }
             byte[] b = new byte[1024];
@@ -260,17 +315,21 @@ public class FTPSpeedUtil {
             localSize = localSize<=0?1000000000:localSize;
             Log.d(FTPSpeed.TAG,"localSize="+localSize);
             long preTime = start;
-            long nowLength = length;
             long preLength = length;
             long speedMax = 0;
             while ((length = input.read(b)) != -1) {
-                if(ftpType==FTPSpeed.CLOSE)break;
+                if (ftpType == FTPSpeed.CLOSE) {
+                    break;
+                }
                 nowLength += length;
                 long nowTime = System.currentTimeMillis();
-                if(nowTime-preTime>=interval){
-                    long speed = (nowLength-preLength)*8/(nowTime-preTime);
-                    speedMax = speedMax>speed?speedMax:speed;
-                    sendMessage(ftpType,FTPSpeed.TESTING,speed,speedMax,nowLength*8/(nowTime-start),nowLength/localSize);
+                if (nowTime - preTime >= interval){
+                    long speed = (nowLength - preLength) * 8/(nowTime - preTime);
+                    speedMax = speedMax > speed ? speedMax : speed;
+                    sendMessage(ftpType, FTPSpeed.TESTING, speed, speedMax,
+                            nowLength * 8 /(nowTime - start),
+                            nowLength / localSize,
+                            nowTime - start, nowLength);
                     preTime = nowTime;
                     preLength = nowLength;
                 }
@@ -278,49 +337,50 @@ public class FTPSpeedUtil {
             }
         } catch (Exception e) {
             e.printStackTrace();
-            sendMessage(ftpType,FTPSpeed.TESTING_ERROR,0,0,0,0);
+            sendMessage(ftpType, FTPSpeed.TESTING_ERROR,0,0,0,
+                    0,0,0);
             error = true;
         } finally {
             downloadStart = false;
-            if(!error){
-                sendMessage(ftpType,FTPSpeed.FINISH,0,0,0,1);
+            if (!error) {
+                sendMessage(ftpType, FTPSpeed.FINISH, 0, 0, 0,
+                        1,System.currentTimeMillis()-start,nowLength);
             }
             try {
-                if(out!=null){
+                if (out != null) {
                     out.flush();
                     out.close();
                 }
-                if(input!=null)input.close();
-                ftpClient.logout();
-            }catch (Exception e){
-                sendMessage(ftpType,FTPSpeed.TESTING_ERROR,0,0,0,0);
+                if (input!=null) {
+                    input.close();
+                }
+                if (ftpClient.isConnected()) {
+                    Log.d(FTPSpeed.TAG, "下载结束，关闭链接");
+                    ftpClient.logout();
+                }
+            } catch (Exception e) {
+                Log.d(FTPSpeed.TAG, "下载结束e=" + e.toString());
+                // sendMessage(ftpType,FTPSpeed.TESTING_ERROR,0,0,0, 0,0,0);
             }
         }
     }
 
-    private void sendMessage(int ftpType,int status,long speed,long speedMax,long speedAver,float progress){
+    private void sendMessage(int ftpType, int status, long speed, long speedMax, long speedAver,
+                             float progress, long totalTime, long totalSize){
         Bundle bundle = new Bundle();
-        //TODO
-       /* try {
-            if (ftpClient.completePendingCommand()) {
-                bundle.putBoolean(ftpType==FTPSpeed.DOWNLOAD?"isDownload":"isUpload", true);
-            } else {
-                bundle.putBoolean(ftpType==FTPSpeed.DOWNLOAD?"isDownload":"isUpload", false);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }*/
         bundle.putInt("ftpType", ftpType);
         bundle.putInt("status",  status);
         bundle.putLong("speed",  speed);
         bundle.putLong("speedMax",  speedMax);
         bundle.putLong("speedAver", speedAver);
         bundle.putFloat("progress", progress);
+        bundle.putLong("time", totalTime);
+        bundle.putLong("size", totalSize);
         Message msg = new Message();
         msg.setData(bundle);
-        if(ftpType==FTPSpeed.DOWNLOAD) {
+        if(ftpType == FTPSpeed.DOWNLOAD) {
             mDownloadHandler.sendMessage(msg);
-        }else if(ftpType==FTPSpeed.UPLOAD){
+        }else if(ftpType == FTPSpeed.UPLOAD){
             mUploadHandler.sendMessage(msg);
         }
     }
@@ -333,9 +393,6 @@ public class FTPSpeedUtil {
         msg.setData(bundle);
         mHandler.sendMessage(msg);
     }
-
-
-
 
     public boolean createDirectory(String path) throws Exception {
         boolean bool = false;
@@ -364,22 +421,32 @@ public class FTPSpeedUtil {
 
     public void removeFTPSpeedListener() {
         ftpType = FTPSpeed.CLOSE;
+        downloadStart = false;
+        uploadStart = false;
+        if (mHandler != null) {
+            mHandler.removeCallbacksAndMessages(null);
+        }
         try {
-            if(ftpClient!=null) {
-                ftpClient.logout();
-                if(ftpClient.isConnected())
-                ftpClient.disconnect();
+            if (mDownloadHandler != null) {
+                mDownloadHandler.removeCallbacksAndMessages(null);
             }
-
-            if(mDownloadHandler!=null)mDownloadHandler.removeCallbacksAndMessages(null);
-            if(mUploadHandler!=null)mUploadHandler.removeCallbacksAndMessages(null);
+            if (mUploadHandler != null) {
+                mUploadHandler.removeCallbacksAndMessages(null);
+            }
+            if (ftpClient != null && ftpClient.isConnected()) {
+                Log.d(FTPSpeed.TAG, "ftp连接中，removeFTPSpeedListener");
+                ftpClient.logout();
+            }
         } catch (Exception e) {
             e.printStackTrace();
+            Log.d(FTPSpeed.TAG, "removeFTPSpeedListener，e=" + e.toString());
         }
     }
 
-    public void deleteFTPFile(final boolean message){
-        if(ftpFileName==null||ftpFileName.equals(ftpOriFileName))return;
+    public void deleteFTPFile(final boolean message) {
+        if (ftpFileName == null || ftpFileName.equals(ftpOriFileName)) {
+            return;
+        }
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -389,8 +456,9 @@ public class FTPSpeedUtil {
                         ftpClient.deleteFile(ftpFileName);
                     } catch (Exception e) {
                         error = true;
-                        if (message)
+                        if (message) {
                             sendMessage(FTPSpeed.DELETE_FTP_FILE, FTPSpeed.DELETE_FTP_FILE_FAILE);
+                        }
                     } finally {
                         if (!error && message) {
                             sendMessage(FTPSpeed.DELETE_FTP_FILE, FTPSpeed.DELETE_FTP_FILE_SUCCESS);
@@ -403,13 +471,14 @@ public class FTPSpeedUtil {
 
     public void deleteSdFile(boolean message){
         new File(Environment.getExternalStorageDirectory(),sdFileName).delete();
-        if(message)
-        sendMessage(FTPSpeed.DELETE_SD_FILE,FTPSpeed.DELETE_SD_FILE_SUCCESS);
+        if (message) {
+            sendMessage(FTPSpeed.DELETE_SD_FILE, FTPSpeed.DELETE_SD_FILE_SUCCESS);
+        }
     }
 
 
-
     private Handler mUploadHandler = new Handler(){
+        @Override
         public void dispatchMessage(Message msg) {
             Bundle bundle = msg.getData();
             int ftpType   = bundle.getInt("ftpType");
@@ -418,29 +487,35 @@ public class FTPSpeedUtil {
             long speedMax = bundle.getLong("speedMax");
             long speedAver= bundle.getLong("speedAver");
             float progress= bundle.getFloat("progress");
+            long totalTime= bundle.getLong("time");
+            long totalSize= bundle.getLong("size");
             Log.d(FTPSpeed.TAG,"progress="+progress);
-            //Log.d(FTPSpeed.TAG,"speed="+speed);
-            //Log.d(FTPSpeed.TAG,"speedMax="+speedMax);
-            //Log.d(FTPSpeed.TAG,"speedAver="+speedAver);
-            if(listener==null)return;
+            if (listener==null) {
+                return;
+            }
             if(status == FTPSpeed.FTP_NO_FILE){
-                listener.sendFTPSpeedError(ftpType,status,"FTP服务器上没有目标测试文件");
+                listener.sendFTPSpeedError(ftpType, status,
+                        "FTP服务器上没有目标测试文件", callbackContext);
                 return;
             }else if(status == FTPSpeed.TESTING_ERROR){
-                listener.sendFTPSpeedError(ftpType,status,"FTP下载测试异常已关闭");
+                listener.sendFTPSpeedError(ftpType, status,
+                        "FTP下载测试异常已关闭", callbackContext);
                 return;
             }
 
             if(status==FTPSpeed.FINISH){
-                listener.sendFTPSpeedMessage(ftpType,status,0,0,0,progress);
+                listener.sendFTPSpeedMessage(ftpType, status,0,0,0,
+                        progress, totalTime, totalSize, callbackContext);
             }else{
-                listener.sendFTPSpeedMessage(FTPSpeed.UPLOAD,FTPSpeed.TESTING,speed,speedMax,speedAver,progress);
+                listener.sendFTPSpeedMessage(FTPSpeed.UPLOAD, FTPSpeed.TESTING, speed, speedMax,
+                        speedAver, progress, totalTime, totalSize, callbackContext);
             }
 
         }
     };
 
     private Handler mDownloadHandler = new Handler(){
+        @Override
         public void dispatchMessage(Message msg) {
             Bundle bundle = msg.getData();
             int ftpType   = bundle.getInt("ftpType");
@@ -449,40 +524,57 @@ public class FTPSpeedUtil {
             long speedMax = bundle.getLong("speedMax");
             long speedAver= bundle.getLong("speedAver");
             float progress= bundle.getFloat("progress");
+            long totalTime= bundle.getLong("time");
+            long totalSize= bundle.getLong("size");
             Log.d(FTPSpeed.TAG,"progress="+progress);
             //Log.d(FTPSpeed.TAG,"speed="+speed);
             //Log.d(FTPSpeed.TAG,"speedMax="+speedMax);
             //Log.d(FTPSpeed.TAG,"speedAver="+speedAver);
-            if(listener==null)return;
-            if(status == FTPSpeed.FTP_NO_FILE){
-                listener.sendFTPSpeedError(ftpType,status,"FTP服务器上没有目标测试文件");
+            if (listener==null) {
                 return;
-            }else if(status == FTPSpeed.TESTING_ERROR){
-                listener.sendFTPSpeedError(ftpType,status,"FTP下载测试异常已关闭");
+            }
+            if (status == FTPSpeed.FTP_NO_FILE) {
+                listener.sendFTPSpeedError(ftpType, status,
+                        "FTP服务器上没有目标测试文件", callbackContext);
+                return;
+            } else if(status == FTPSpeed.TESTING_ERROR) {
+                listener.sendFTPSpeedError(ftpType, status,
+                        "FTP下载测试异常已关闭", callbackContext);
                 return;
             }
 
-            if(status==FTPSpeed.FINISH){
-                listener.sendFTPSpeedMessage(ftpType,status,0,0,0,progress);
-            }else {
-                listener.sendFTPSpeedMessage(FTPSpeed.DOWNLOAD, FTPSpeed.TESTING,speed, speedMax, speedAver, progress);
+            if (status == FTPSpeed.FINISH) {
+                listener.sendFTPSpeedMessage(ftpType, status, 0,0, 0,
+                        progress, totalTime, totalSize, callbackContext);
+            } else {
+                listener.sendFTPSpeedMessage(FTPSpeed.DOWNLOAD, FTPSpeed.TESTING, speed, speedMax,
+                        speedAver, progress, totalTime, totalSize, callbackContext);
             }
         }
     };
 
     private Handler mHandler = new Handler(){
+        @Override
         public void dispatchMessage(Message msg) {
             Bundle bundle = msg.getData();
             int ftpType   = bundle.getInt("ftpType");
             int status    = bundle.getInt("status");
-            if(status == FTPSpeed.DELETE_FTP_FILE_FAILE){
-                listener.sendFTPSpeedError(ftpType,status,"FTP服务器上没有目标测试文件");
-            }else if(status == FTPSpeed.DELETE_FTP_FILE_SUCCESS||status == FTPSpeed.DELETE_SD_FILE_SUCCESS){
-                listener.sendFTPSpeedMessage(ftpType,status,0,0,0,0);
-            }else if(status == FTPSpeed.LOGIN_FAILE){
-                listener.sendFTPSpeedError(ftpType,status,"FTP服务器登录失败");
-            }else if(status == FTPSpeed.CONNECT_FAILE){
-                listener.sendFTPSpeedError(ftpType,status,"FTP服务器连接失败");
+            if (listener == null) {
+                return;
+            }
+            if(status == FTPSpeed.DELETE_FTP_FILE_FAILE) {
+                listener.sendFTPSpeedError(ftpType, status,
+                        "FTP服务器上没有目标测试文件", callbackContext);
+            } else if (status == FTPSpeed.DELETE_FTP_FILE_SUCCESS||
+                    status == FTPSpeed.DELETE_SD_FILE_SUCCESS) {
+                listener.sendFTPSpeedMessage(ftpType, status, 0, 0, 0,
+                        0,0,0, callbackContext);
+            } else if (status == FTPSpeed.LOGIN_FAILE) {
+                listener.sendFTPSpeedError(ftpType, status,
+                        "FTP服务器登录失败", callbackContext);
+            } else if (status == FTPSpeed.CONNECT_FAILE) {
+                listener.sendFTPSpeedError(ftpType, status,
+                        "FTP服务器连接失败", callbackContext);
             }
         }
     };

@@ -1,6 +1,6 @@
 {
   "name": "com.chinamobile.ftp.ftpspeed",
-  "version": "2.7.0",
+  "version": "3.6.5",
   "description": "this is plugin about ftp speed test.",
   "main": "index.js",
   "scripts": {
@@ -17,7 +17,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/liangzhongtai/FTPSpeed.git"
+    "url": "https://github.com/liangzhongtai/ftpspeed.git"
   },
   "keywords": [
     "cordova",
